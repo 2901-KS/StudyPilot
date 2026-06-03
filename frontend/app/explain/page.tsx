@@ -2,10 +2,11 @@
 
 import { useState } from "react";
 import { explainTopic } from "@/lib/api";
+import { markdownToHtml } from "@/lib/format";
 
 export default function ExplainPage() {
   const [topic, setTopic] = useState("");
-  const [result, setResult] = useState("");
+  const [html, setHtml] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
@@ -14,11 +15,11 @@ export default function ExplainPage() {
 
     setLoading(true);
     setError("");
-    setResult("");
+    setHtml("");
 
     try {
       const data = await explainTopic(topic, false);
-      setResult(data.explanation);
+      setHtml(markdownToHtml(data.explanation));
     } catch (err) {
       setError(err instanceof Error ? err.message : "Something went wrong");
     } finally {
@@ -35,7 +36,7 @@ export default function ExplainPage() {
         placeholder="Enter a topic..."
         value={topic}
         onChange={(e) => setTopic(e.target.value)}
-        className="w-full border rounded-lg p-3 text-black"
+        className="w-full border rounded-lg p-3 bg-white text-black"
       />
 
       <button
@@ -51,12 +52,11 @@ export default function ExplainPage() {
           {error}
         </div>
       )}
-
-      {result && (
-        <div className="mt-6 border rounded-lg p-4 whitespace-pre-wrap">
-          {result}
-        </div>
-      )}
+      {html && (
+        <div className="mt-6 border rounded-lg p-4 bg-white text-black"
+    dangerouslySetInnerHTML={{ __html: html }}
+        />
+     )}
     </main>
   );
 }
