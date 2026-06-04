@@ -14,6 +14,7 @@ export interface StudyPlanRequest {
   subjects: { name: string; min_hours_required: number; deadline: string }[]
   weekday_hours: number
   weekend_hours: number
+  subjects_per_day: number
   start_date: string
 }
 

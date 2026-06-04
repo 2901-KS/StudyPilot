@@ -78,7 +78,8 @@ class ExplainRequest(BaseModel):
 class Subject(BaseModel):
     name: str
     min_hours_required: float
-    deadline: str  # YYYY-MM-DD
+    deadline: str
+    importance: str = "medium"
 
     @field_validator("name")
     def name_not_empty(cls, v):
@@ -93,21 +94,18 @@ class Subject(BaseModel):
             raise ValueError("hours must be positive")
         return v
 
-    @field_validator("deadline")
-    def valid_deadline(cls, v):
-        try:
-            d = datetime.strptime(v, "%Y-%m-%d")
-        except ValueError:
-            raise ValueError("deadline must be YYYY-MM-DD")
-        if d.date() < datetime.now().date():
-            raise ValueError("deadline cannot be in the past")
+    @field_validator("importance")
+    def valid_importance(cls, v):
+        v = v.lower()
+        if v not in ["high", "medium", "low"]:
+            raise ValueError("importance must be high, medium or low")
         return v
-
-
+    
 class StudyPlanRequest(BaseModel):
     subjects: List[Subject]
     weekday_hours: float
     weekend_hours: float
+    subjects_per_day: Optional[int] = 2
     start_date: Optional[str] = None
 
     @field_validator("subjects")
@@ -122,6 +120,12 @@ class StudyPlanRequest(BaseModel):
     def hours_in_range(cls, v):
         if v < 0.5 or v > 16:
             raise ValueError("daily hours must be between 0.5 and 16")
+        return v
+    
+    @field_validator("subjects_per_day")
+    def valid_subject_count(cls, v):
+        if v < 1 or v > 5:
+            raise ValueError("subjects_per_day must be between 1 and 5")
         return v
 
 
@@ -189,41 +193,88 @@ def hours_available(start: datetime, end: datetime, wd: float, we: float) -> flo
 
 
 # ── A* Scheduler ─────────────────────────────────────────────────────────────
-def a_star_allocate(subjects, weekday_hours, weekend_hours, start_date):
+def a_star_allocate(subjects, weekday_hours, weekend_hours, start_date, subjects_per_day):
     schedule = {}
+
     hours_left = {s.name: s.min_hours_required for s in subjects}
-    deadlines = {s.name: datetime.strptime(s.deadline, "%Y-%m-%d") for s in subjects}
+
+    deadlines = {
+        s.name: datetime.strptime(s.deadline, "%Y-%m-%d")
+        for s in subjects
+    }
+
+    importance_weights = {
+        s.name: (
+            3 if s.importance.lower() == "high"
+            else 2 if s.importance.lower() == "medium"
+            else 1
+        )
+        for s in subjects
+    }
+
     final_deadline = max(deadlines.values())
     cur = start_date
 
     while cur <= final_deadline:
-        daily_limit = weekend_hours if cur.weekday() >= 5 else weekday_hours
+
+        daily_limit = (
+            weekend_hours
+            if cur.weekday() >= 5
+            else weekday_hours
+        )
+
         urgency = {
-            name: hours_left[name] / max(1, (deadlines[name] - cur).days)
+            name: (
+                hours_left[name]
+                * importance_weights[name]
+            )
+            / max(1, (deadlines[name] - cur).days)
+
             for name in hours_left
-            if hours_left[name] > 0 and cur <= deadlines[name]
+            if hours_left[name] > 0
+            and cur <= deadlines[name]
         }
+
         if not urgency:
             cur += timedelta(days=1)
             continue
 
-        top = sorted(urgency.items(), key=lambda x: x[1], reverse=True)[:2]
-        total_u = sum(s for _, s in top)
+        top = sorted(
+            urgency.items(),
+            key=lambda x: x[1],
+            reverse=True
+        )[:subjects_per_day]
+
+        total_u = sum(score for _, score in top)
+
         day_plan = []
 
         for name, score in top:
-            share = (score / total_u) * daily_limit if total_u else daily_limit / len(top)
-            alloc = round(min(hours_left[name], share), 2)
+
+            share = (
+                (score / total_u) * daily_limit
+                if total_u
+                else daily_limit / len(top)
+            )
+
+            alloc = round(
+                min(hours_left[name], share),
+                2
+            )
+
             if alloc > 0:
-                day_plan.append({name: float(alloc)})
+                day_plan.append({
+                    name: float(alloc)
+                })
+
                 hours_left[name] -= alloc
 
         if day_plan:
             schedule[cur.strftime("%Y-%m-%d")] = day_plan
+
         cur += timedelta(days=1)
 
     return schedule
-
 
 # ── Routes ────────────────────────────────────────────────────────────────────
 @app.get("/")
@@ -364,7 +415,7 @@ async def planner(request: Request, body: StudyPlanRequest):
                 }
 
         base_schedule = a_star_allocate(
-            body.subjects, body.weekday_hours, body.weekend_hours, start
+            body.subjects, body.weekday_hours, body.weekend_hours, start, body.subjects_per_day
         )
 
         plan = await call_groq(

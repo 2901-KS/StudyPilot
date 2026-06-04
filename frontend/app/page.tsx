@@ -26,6 +26,11 @@ const features = [
     description: "Practice with AI-generated quizzes and test your understanding.",
     href: "/quiz",
   },
+  {
+  title: "Study History",
+  description: "Access previously generated study plans and continue where you left off.",
+  href: "/history",
+},
 ];
 
 export default function Home() {
