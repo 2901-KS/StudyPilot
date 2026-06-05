@@ -109,9 +109,16 @@ export default function PlannerPage() {
 existingPlans.unshift({
   id: Date.now(),
   createdAt: new Date().toLocaleString(),
-  subjects,
+
   plan: data.plan,
-  allocation: data.base_allocation,
+  base_allocation: data.base_allocation,
+
+  subjects: payloadSubjects,
+
+  weekday_hours: Number(weekdayHours),
+  weekend_hours: Number(weekendHours),
+
+  generatedAt: new Date().toISOString(),
 });
 
 localStorage.setItem(
